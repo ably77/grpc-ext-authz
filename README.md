@@ -250,6 +250,64 @@ spec:
       grpc: {}
 ```
 
+## Customizing for Your Needs
+
+This server is a starting point. Fork [github.com/ably77/grpc-ext-authz](https://github.com/ably77/grpc-ext-authz) and modify it to fit your authorization requirements.
+
+### Adding a new auth mode
+
+1. Write a check function with this signature:
+   ```go
+   func checkMyMode(headers map[string]string, body string) (bool, string, map[string]string) {
+       // Return (allowed, reason, headersToInject)
+   }
+   ```
+
+2. Register it in the `authModes` map in `main.go`:
+   ```go
+   var authModes = map[string]authFunc{
+       // ... existing modes ...
+       "mymode": checkMyMode,
+   }
+   ```
+
+3. Add any init function if your mode needs startup config from env vars.
+
+4. Build and push your image:
+   ```bash
+   ./build-and-push.sh 0.0.4
+   ```
+
+### Common customization patterns
+
+| Use Case | What to Change |
+|---|---|
+| **Validate against a different header** | Modify `checkHeader()` or add a new mode |
+| **Call an external API for entitlements** | Add an HTTP client call in your check function (see the [entitlement example](https://github.com/ably77/grpc-ext-authz/blob/main/README.md)) |
+| **Route-based authorization** | Read `httpReq.GetPath()` in the `Check` method and dispatch to different logic per route |
+| **Inject user identity headers** | Return headers in the third return value — they're automatically added to the upstream request via `OkResponse.Headers` |
+| **Integrate with your IdP's JWT** | Modify `checkJWT()` to use your IdP's claim namespace (e.g., `https://your-org.com/role` instead of `https://example.com/role`) |
+
+### Injected headers and MCP authorization
+
+Headers injected by the gRPC ext-authz server are visible to downstream policies. Use them in MCP authorization CEL expressions:
+
+```yaml
+mcpAuthorization:
+  rules:
+  - 'request.headers["x-user-id"] == "admin" && mcp.tool.name == "delete"'
+  - 'request.headers["x-authz-matched-product"] == "PRO" && mcp.tool.name in ["analyze", "report"]'
+```
+
+## References
+
+- [Solo Enterprise Agentgateway: BYO ext-auth service](https://docs.solo.io/agentgateway/2.2.x/security/extauth/byo-ext-auth-service/) — official docs for gRPC ext-authz with Enterprise Agentgateway
+- [Agentgateway OSS: BYO ext-auth service](https://agentgateway.dev/docs/kubernetes/main/security/extauth/byo-ext-auth-service/) — OSS docs with Envoy ext-authz proto details
+- [Agentgateway Standalone: External authorization](https://agentgateway.dev/docs/standalone/main/configuration/security/external-authz/) — standalone config with gRPC and HTTP options
+- [Envoy ext-authz proto](https://github.com/envoyproxy/envoy/blob/main/api/envoy/service/auth/v3/external_auth.proto) — the gRPC service definition this server implements
+- [ably77/http-ext-authz](https://github.com/ably77/http-ext-authz) — HTTP version of this server (same auth modes, plain HTTP protocol)
+- [Istio ext-authz sample](https://github.com/istio/istio/tree/master/samples/extauthz) — the Istio sample server used in the official docs
+
 ## Build and Push
 
 ```bash
